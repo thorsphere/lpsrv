@@ -1,0 +1,22 @@
+{
+  "name": "Go Dev Environment",
+  "customizations": {
+    "codespaces": {
+      "repositories": {
+        "thorsphere/lpsrv": {
+          "permissions": {
+            "contents": "write"
+          }
+        }
+      }
+    },
+    "vscode": {
+      "extensions": [
+        "golang.go"
+      ],
+      "settings": {
+        "git.autofetch": true
+      }
+    }
+  }
+}
