@@ -88,6 +88,7 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request, maxBytes int64) (
 
 // WriteJSON marshals payload in memory before writing a JSON response with
 // status to w. It requires a non-nil r and a final HTTP status (200–599).
+// For statuses 204, 205, and 304, it writes only the status and ignores payload.
 // Invalid arguments or marshaling failures are logged and produce a sanitized
 // 500 Internal Server Error. Responses to HEAD requests omit the body.
 func WriteJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
@@ -109,6 +110,14 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 			Err: fmt.Errorf("expected a final HTTP status (200–599), got %d", status),
 		}))
 		// Stop before attempting to encode the payload.
+		return
+	}
+	// Skip marshaling and body writes for statuses that prohibit content.
+	switch status {
+	case http.StatusNoContent, http.StatusResetContent, http.StatusNotModified:
+		// Commit the status without adding a JSON Content-Type header.
+		w.WriteHeader(status)
+		// Stop before processing the payload.
 		return
 	}
 	// Marshal payload in memory before sending headers so encoding failures can return 500.
