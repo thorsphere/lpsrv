@@ -94,7 +94,7 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 	// Reject a missing request before inspecting the method or marshaling payload.
 	if r == nil {
 		// Log the caller error and send a sanitized response.
-		WriteInternalError(w, tserr.NilParam("request"))
+		writeInternalError(w, tserr.NilParam("request"))
 		// Stop before attempting to encode the payload.
 		return
 	}
@@ -142,7 +142,7 @@ func writeJSONInternalError(w http.ResponseWriter, head bool, err error) {
 	// Use the standard internal error response when a body is allowed.
 	if !head {
 		// Log the error and write the generic client-facing message.
-		WriteInternalError(w, err)
+		writeInternalError(w, err)
 		// Stop after writing the error response.
 		return
 	}
