@@ -110,7 +110,7 @@ func (w *failingJSONWriter) Write(p []byte) (int, error) {
 
 // TestWriteJSON verifies the status, committed content type, and body of JSON responses.
 func TestWriteJSON(t *testing.T) {
-	// Define cases for normal responses, default statuses, and failure paths.
+	// Define cases for normal responses, invalid arguments, and failure paths.
 	tests := []struct {
 		name       string // The subtest name.
 		method     string // The request method, or empty for a nil request.
@@ -122,9 +122,17 @@ func TestWriteJSON(t *testing.T) {
 		wantBody   string // The expected response body.
 	}{
 		{name: "explicit status", method: http.MethodPost, status: http.StatusCreated, payload: map[string]string{"name": "Ada"}, wantStatus: http.StatusCreated, wantType: "application/json", wantBody: `{"name":"Ada"}`},
-		{name: "zero status", method: http.MethodGet, payload: []int{1, 2}, wantStatus: http.StatusOK, wantType: "application/json", wantBody: `[1,2]`},
-		{name: "negative status and nil request", status: -1, wantStatus: http.StatusOK, wantType: "application/json", wantBody: `null`},
+		{name: "OK status", method: http.MethodGet, status: http.StatusOK, payload: []int{1, 2}, wantStatus: http.StatusOK, wantType: "application/json", wantBody: `[1,2]`},
+		{name: "nil request", status: http.StatusOK, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "zero status", method: http.MethodGet, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "negative status", method: http.MethodGet, status: -1, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "informational status", method: http.MethodGet, status: http.StatusEarlyHints, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "status above final range", method: http.MethodGet, status: 600, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "four-digit status", method: http.MethodGet, status: 1000, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
+		{name: "unregistered final status", method: http.MethodGet, status: 599, wantStatus: 599, wantType: "application/json", wantBody: `null`},
 		{name: "HEAD omits body", method: http.MethodHead, status: http.StatusAccepted, payload: "Ada", wantStatus: http.StatusAccepted, wantType: "application/json"},
+		{name: "HEAD with invalid status omits error body", method: http.MethodHead, status: http.StatusEarlyHints, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8"},
+		{name: "HEAD with marshal failure omits error body", method: http.MethodHead, status: http.StatusOK, payload: func() {}, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8"},
 		{name: "marshal failure replaces success with sanitized error", method: http.MethodGet, status: http.StatusCreated, payload: func() {}, wantStatus: http.StatusInternalServerError, wantType: "text/plain; charset=utf-8", wantBody: "Internal Server Error\n"},
 		{name: "write failure preserves committed status", method: http.MethodGet, status: http.StatusAccepted, payload: "Ada", failWrite: true, wantStatus: http.StatusAccepted, wantType: "application/json"},
 	}

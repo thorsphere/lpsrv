@@ -8,6 +8,7 @@ package lpsrv
 import (
 	"encoding/json" // Import the encoding/json package for JSON decoding and buffered encoding.
 	"errors"        // Import the errors package for error matching and construction.
+	"fmt"           // Import the fmt package for status validation diagnostics.
 	"io"            // Import the io package for EOF checks on trailing JSON tokens.
 	"net/http"      // Import the net/http package for body size limits and HTTP status codes.
 
@@ -85,31 +86,46 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request, maxBytes int64) (
 	return payload, 0, nil
 }
 
-// WriteJSON marshals payload to JSON in memory before writing headers, responds
-// with status (defaulting to 200 OK when status is zero or negative) and an
-// application/json Content-Type on w, omits the body when r is a HEAD request,
-// and logs and writes a sanitized 500 Internal Server Error if marshaling fails.
+// WriteJSON marshals payload in memory before writing a JSON response with
+// status to w. It requires a non-nil r and a final HTTP status (200–599).
+// Invalid arguments or marshaling failures are logged and produce a sanitized
+// 500 Internal Server Error. Responses to HEAD requests omit the body.
 func WriteJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
+	// Reject a missing request before inspecting the method or marshaling payload.
+	if r == nil {
+		// Log the caller error and send a sanitized response.
+		WriteInternalError(w, tserr.NilParam("request"))
+		// Stop before attempting to encode the payload.
+		return
+	}
+	// Determine whether the response must omit its body.
+	head := r.Method == http.MethodHead
+	// Reject statuses outside the final HTTP response range.
+	if status < http.StatusOK || status > 599 {
+		// Log the invalid status and send a sanitized response.
+		writeJSONInternalError(w, head, tserr.Op(&tserr.OpArgs{
+			Op:  "validate response status",
+			Fn:  requestPath(r),
+			Err: fmt.Errorf("expected a final HTTP status (200–599), got %d", status),
+		}))
+		// Stop before attempting to encode the payload.
+		return
+	}
 	// Marshal payload in memory before sending headers so encoding failures can return 500.
 	jsonBytes, err := json.Marshal(payload)
 	// If JSON encoding fails, log the error and respond with a sanitized 500 status.
 	if err != nil {
-		// Write a sanitized 500 Internal Server Error before any 2xx headers are sent.
-		WriteInternalError(w, tserr.Op(&tserr.OpArgs{Op: "json.Marshal", Fn: requestPath(r), Err: err}))
+		// Write a sanitized 500 Internal Server Error before committing the supplied status.
+		writeJSONInternalError(w, head, tserr.Op(&tserr.OpArgs{Op: "json.Marshal", Fn: requestPath(r), Err: err}))
 		// Stop processing after writing the error response.
 		return
-	}
-	// Default non-positive status codes to 200 OK.
-	if status <= 0 {
-		// Use 200 OK when no explicit status code was supplied.
-		status = http.StatusOK
 	}
 	// Set the JSON Content-Type header before writing the status line.
 	w.Header().Set(contentTypeHeader, jsonContentType)
 	// Write the HTTP status code header.
 	w.WriteHeader(status)
 	// Omit the response body on HEAD requests per RFC 9110 semantics.
-	if r != nil && r.Method == http.MethodHead {
+	if head {
 		// Return without writing body bytes on HEAD requests.
 		return
 	}
@@ -118,4 +134,28 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 		// Log the response write error for diagnostics after headers have been sent.
 		tslog.Error(tserr.Op(&tserr.OpArgs{Op: "write response", Fn: requestPath(r), Err: err}))
 	}
+}
+
+// writeJSONInternalError logs err and sends a sanitized 500 response, omitting
+// the body when head is true.
+func writeJSONInternalError(w http.ResponseWriter, head bool, err error) {
+	// Use the standard internal error response when a body is allowed.
+	if !head {
+		// Log the error and write the generic client-facing message.
+		WriteInternalError(w, err)
+		// Stop after writing the error response.
+		return
+	}
+	// Log the underlying error without exposing it to the client.
+	tslog.Error(err)
+	// Obtain the response headers before committing the status.
+	header := w.Header()
+	// Discard any length set for the original response.
+	header.Del("Content-Length")
+	// Match the headers on the equivalent plain-text error response.
+	header.Set(contentTypeHeader, "text/plain; charset=utf-8")
+	// Prevent content-type sniffing, consistent with http.Error.
+	header.Set("X-Content-Type-Options", "nosniff")
+	// Commit the error status without writing a body.
+	w.WriteHeader(http.StatusInternalServerError)
 }
