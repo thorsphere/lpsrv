@@ -6,9 +6,63 @@ package lpsrv
 
 // Import packages
 import (
-	"net/http" // Import the net/http package for request path assertions.
+	"context"  // Import the context package for shutdown deadlines.
+	"net/http" // Import the net/http package for request paths and lifecycle seams.
+	"os"       // Import the os package for signal notification seams.
 	"time"     // Import the time package for the resolved shutdown timeout.
 )
+
+// SetNotifyContext replaces the signal subscription seam and returns a function to restore it.
+func SetNotifyContext(fn func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)) func() {
+	// Keep the original signal subscription for test cleanup.
+	previous := notifyContext
+	// Install the test signal subscription.
+	notifyContext = fn
+	// Return a cleanup function that reinstates the original subscription.
+	return func() {
+		// Restore the signal subscription seam.
+		notifyContext = previous
+	}
+}
+
+// SetListenAndServe replaces the listener seam and returns a function to restore it.
+func SetListenAndServe(fn func(*http.Server) error) func() {
+	// Keep the original listener for test cleanup.
+	previous := listenAndServe
+	// Install the test listener.
+	listenAndServe = fn
+	// Return a cleanup function that reinstates the original listener.
+	return func() {
+		// Restore the listener seam.
+		listenAndServe = previous
+	}
+}
+
+// SetShutdownServer replaces the graceful shutdown seam and returns a function to restore it.
+func SetShutdownServer(fn func(context.Context, *http.Server) error) func() {
+	// Keep the original graceful shutdown for test cleanup.
+	previous := shutdownServer
+	// Install the test shutdown function.
+	shutdownServer = fn
+	// Return a cleanup function that reinstates the original graceful shutdown.
+	return func() {
+		// Restore the shutdown seam.
+		shutdownServer = previous
+	}
+}
+
+// SetCloseServer replaces the forced shutdown seam and returns a function to restore it.
+func SetCloseServer(fn func(*http.Server) error) func() {
+	// Keep the original forced shutdown for test cleanup.
+	previous := closeServer
+	// Install the test close function.
+	closeServer = fn
+	// Return a cleanup function that reinstates the original forced shutdown.
+	return func() {
+		// Restore the close seam.
+		closeServer = previous
+	}
+}
 
 // RequestPath returns the path that error diagnostics would use for r.
 func RequestPath(r *http.Request) string {
