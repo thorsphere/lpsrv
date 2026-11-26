@@ -52,7 +52,7 @@ When generating code, refactoring, or planning tasks, you MUST adhere to these t
   so slow AI generations can fail cleanly before the TCP socket is reset.
 
 **c) HTTP & Security Hardening**
-- **Bearer Authentication:** Reject empty or whitespace-only configured tokens,
+- **Bearer Authentication:** Reject configured tokens outside the RFC 6750 grammar,
   compare fixed-length SHA-256 digests with `subtle.ConstantTimeCompare` to
   prevent both content and length timing leaks, and set `WWW-Authenticate: Bearer`
   per RFC 6750 on `401 Unauthorized` responses.
@@ -139,10 +139,11 @@ When generating code, refactoring, or planning tasks, you MUST adhere to these t
 ### 6. Deliberate Design Decisions — do NOT "fix" these
 - **SHA-256 digest before `subtle.ConstantTimeCompare` in Bearer auth:**
   `subtle.ConstantTimeCompare` returns `0` immediately when slice lengths
-  differ, which leaks the length of `API_TOKEN` via timing. Hashing both the
-  incoming `Authorization` header and expected `"Bearer " + tok` value with
-  `sha256.Sum256` guarantees a fixed 32-byte constant-time comparison. Do not
-  "simplify" this to direct `ConstantTimeCompare` on raw strings/bytes or `==`.
+  differ, which leaks the length of `API_TOKEN` via timing. Parse the
+  case-insensitive Bearer scheme and its ASCII space separator, then hash both
+  the supplied and configured tokens with `sha256.Sum256` for a fixed 32-byte
+  constant-time comparison. Do not "simplify" this to direct
+  `ConstantTimeCompare` on raw strings/bytes or `==`.
 - **In-memory `json.Marshal` before writing HTTP headers:** Response JSON is
   deliberately marshaled into a `[]byte` buffer before setting headers or
   calling `w.WriteHeader`, rather than streaming with `json.NewEncoder(w).Encode`.
